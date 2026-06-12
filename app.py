@@ -1398,8 +1398,8 @@ with tab_nonparam:
         p_matrix_display = p_matrix.round(4)
         
         st.dataframe(
-            p_matrix_display.style.applymap(color_pvalue),
-            use_container_width=True
+            p_matrix_display.style.map(color_pvalue),
+            width="stretch"
         )
         
         # Résumé textuel des paires significatives
