@@ -360,7 +360,7 @@ if "df_umap" not in st.session_state:
 if run_umap:
     with st.spinner("Calcul en cours…"):
         df_umap = cached_umap(
-            df_raw.to_json(),
+            df_raw,
             mode=window_mode,
             window_sec=window_sec,
             use_physio=use_physio,
