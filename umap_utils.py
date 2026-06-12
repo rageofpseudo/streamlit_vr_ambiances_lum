@@ -1079,10 +1079,13 @@ def agreger_par_salle(df, feature_cols):
     return agg
 
 
-def load_subject(filepath: str) -> pd.DataFrame:
+def load_subject(filepath) -> pd.DataFrame:
     """
     Charge un CSV sujet et applique les types corrects.
     Le CSV n'a PAS de header → on force les noms de colonnes.
+
+    filepath : str (chemin local) OU UploadedFile (Streamlit)
+    pd.read_csv() accepte les deux sans modification.
     """
     col_names = [
         "heure_locale", "timestamp",

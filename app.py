@@ -15,6 +15,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from pathlib import Path
+import io
+
 
 # Normality check
 import plotly.graph_objects as go
@@ -90,29 +92,40 @@ with st.sidebar:
     st.caption("Réalité virtuelle · Ambiances lumineuses · LIRIS/Lyon1")
     st.divider()
 
-    # ── Dossier données ───────────────────────────────────────────────────────
-    data_dir = st.text_input(
-        "📁 Dossier des CSV",
-        value="./data/csv",
-        help="Chemin relatif ou absolu vers le dossier contenant les CSV sujets"
+    DATA_DIR = "./data/csv"
+
+    # ── Chargement des données ─────────────────────────────────────────────
+    uploaded_files = st.file_uploader(      # pas st.sidebar. — on est déjà dans with st.sidebar
+        "Charger les CSV participants",
+        accept_multiple_files=True,
+        type="csv"
     )
 
-    # Lister les fichiers disponibles
-    csv_files = sorted(glob.glob(os.path.join(data_dir, "*.csv")))
-    if not csv_files:
-        st.warning(f"Aucun CSV trouvé dans `{data_dir}`")
-        st.info("Structure attendue : un CSV par sujet, sans header, 27 colonnes.")
+    if uploaded_files:
+        subjects = load_all_subjects_uploaded(uploaded_files)
+    elif Path(DATA_DIR).exists():
+        subjects = load_all_subjects(DATA_DIR)
+    else:
+        st.info("Charge les fichiers CSV dans la sidebar pour continuer.")
         st.stop()
 
-    subject_names = [os.path.basename(f) for f in csv_files]
+    if not subjects:
+        st.warning("Aucun sujet chargé.")
+        st.stop()
+
+    # ── Sélection du sujet ─────────────────────────────────────────────────
+    # subjects est un dict {nom: df} — on navigue dedans directement,
+    # plus besoin de csv_files ni de selected_file
+    subject_names = sorted(subjects.keys())
     selected_subject = st.selectbox(
         "👤 Sujet",
         options=subject_names,
-        help="Sélectionner un sujet pour visualiser ses données"
     )
-    selected_file = csv_files[subject_names.index(selected_subject)]
+
+    df = subjects[selected_subject]  # ← le DataFrame, directement
 
     st.divider()
+    # ... reste de ta sidebar (options UMAP, etc.)
 
     # ── Fenêtrage temporel ────────────────────────────────────────────────────
     st.subheader("⏱️ Fenêtrage")
@@ -209,30 +222,24 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_data(show_spinner="Chargement du sujet…")
-def cached_load(filepath):
+def cached_load(file_bytes: bytes, filename: str):
     """
-    @st.cache_data : Streamlit met en cache le résultat.
-    Si on rappelle avec le même filepath, pas de rechargement.
+    On passe les bytes bruts (hashables) plutôt que l'objet UploadedFile.
+    filename sert uniquement à construire l'id du sujet.
     """
-    return load_subject(filepath)
+    return load_subject(io.BytesIO(file_bytes))  # BytesIO = fichier en mémoire
 
 
 @st.cache_data(show_spinner="Calcul UMAP…")
 def cached_umap(df_json, mode, window_sec, use_physio, use_physio_filtered, use_displacement,
                 n_neighbors, min_dist):
-    """
-    On passe le df sérialisé en JSON (hashable par Streamlit pour le cache).
-    Toutes les options sont des paramètres → si l'un change, recalcul.
-    """
+    # ← rien ne change ici
     df = pd.read_json(df_json, convert_dates=False)
-    df["timestamp"] = df["timestamp"].astype(float)  # ← ajouter cette ligne
-    df["t_rel"] = df["t_rel"].astype(float)          # ← et celle-ci par sécurité
-
+    df["timestamp"] = df["timestamp"].astype(float)
+    df["t_rel"] = df["t_rel"].astype(float)
     df_windowed = extract_window(df, mode=mode, window_sec=window_sec)
-
     if df_windowed.empty:
         return None
-
     df_umap = compute_umap(
         df_windowed,
         use_physio=use_physio,
@@ -241,30 +248,38 @@ def cached_umap(df_json, mode, window_sec, use_physio, use_physio_filtered, use_
         n_neighbors=n_neighbors,
         min_dist=min_dist,
     )
-    # Ajouter label événement lisible
     df_umap["event_label"] = df_umap.apply(get_event_label, axis=1)
     return df_umap
 
+
 @st.cache_data(show_spinner="Chargement de tous les sujets...")
 def load_all_subjects(data_dir: str) -> dict:
-    """
-    Charge tous les CSV du dossier en une fois.
-    
-    Mis en cache par Streamlit → ne se recalcule qu'une fois par session,
-    même si l'utilisateur change d'onglet ou d'options.
-    
-    data_dir : chemin vers le dossier contenant les CSV des sujets
-    """
+    # ← mode local, rien ne change
     subjects_data = {}
-    
     for filepath in sorted(Path(data_dir).glob("*.csv")):
-        subject_name = filepath.stem  # "PARTICIPAN1.csv" → "PARTICIPAN1"
+        subject_name = filepath.stem
         try:
             df = load_subject(str(filepath))
             subjects_data[subject_name] = df
         except Exception as e:
             st.warning(f"{subject_name} : erreur au chargement ({e})")
-    
+    return subjects_data
+
+
+def load_all_subjects_uploaded(uploaded_files) -> dict:
+    """
+    Version pour les fichiers uploadés.
+    Pas de @st.cache_data ici — le cache est géré dans cached_load,
+    au niveau de chaque fichier individuellement.
+    """
+    subjects_data = {}
+    for f in uploaded_files:
+        subject_name = Path(f.name).stem
+        try:
+            df = cached_load(f.read(), f.name)  # f.read() → bytes hashables
+            subjects_data[subject_name] = df
+        except Exception as e:
+            st.warning(f"{subject_name} : erreur au chargement ({e})")
     return subjects_data
 
 # ══════════════════════════════════════════════════════════════════════════════
