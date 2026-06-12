@@ -16,6 +16,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from pathlib import Path
 import io
+from io import StringIO  #  Pour forcer pandas à comprendre que c'est du texte JSON.
 
 
 # Normality check
@@ -68,10 +69,10 @@ def cached_load(file_bytes: bytes, filename: str):
 
 
 @st.cache_data(show_spinner="Calcul UMAP…")
-def cached_umap(df_json, mode, window_sec, use_physio, use_physio_filtered, use_displacement,
+def cached_umap(_df, mode, window_sec, use_physio, use_physio_filtered, use_displacement,
                 n_neighbors, min_dist):
     # ← rien ne change ici
-    df = pd.read_json(df_json, convert_dates=False)
+    df = _df.copy()
     df["timestamp"] = df["timestamp"].astype(float)
     df["t_rel"] = df["t_rel"].astype(float)
     df_windowed = extract_window(df, mode=mode, window_sec=window_sec)
@@ -360,7 +361,7 @@ if "df_umap" not in st.session_state:
 if run_umap:
     with st.spinner("Calcul en cours…"):
         df_umap = cached_umap(
-            df_raw.to_json(),
+            df_raw,
             mode=window_mode,
             window_sec=window_sec,
             use_physio=use_physio,
