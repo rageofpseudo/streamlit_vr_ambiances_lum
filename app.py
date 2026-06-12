@@ -169,27 +169,27 @@ with st.sidebar:
     )
 
     if uploaded_files:
-        subjects = load_all_subjects_uploaded(uploaded_files)
+        subjects_data = load_all_subjects_uploaded(uploaded_files)
     elif Path(DATA_DIR).exists():
-        subjects = load_all_subjects("./data/csv")
+        subjects_data = load_all_subjects("./data/csv")
     else:
         st.info("Charge les fichiers CSV dans la sidebar pour continuer.")
         st.stop()
 
-    if not subjects:
+    if not subjects_data:
         st.warning("Aucun sujet chargé.")
         st.stop()
 
     # ── Sélection du sujet ─────────────────────────────────────────────────
     # subjects est un dict {nom: df} — on navigue dedans directement,
     # plus besoin de csv_files ni de selected_file
-    subject_names = sorted(subjects.keys())
+    subject_names = sorted(subjects_data.keys())
     selected_subject = st.selectbox(
         "👤 Sujet",
         options=subject_names,
     )
     
-    df = subjects[selected_subject]  # ← le DataFrame, directement
+    df = subjects_data[selected_subject]  # ← le DataFrame, directement
     st.divider()
     # ... reste de ta sidebar (options UMAP, etc.)
 
@@ -360,7 +360,7 @@ if "df_umap" not in st.session_state:
 if run_umap:
     with st.spinner("Calcul en cours…"):
         df_umap = cached_umap(
-            df_raw.to_json,
+            df_raw.to_json(),
             mode=window_mode,
             window_sec=window_sec,
             use_physio=use_physio,
@@ -935,9 +935,6 @@ with tab_participants:
 # TAB 5 — Statistiques
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_stats:
-    if uploaded_files:
-        subjects_data = subjects 
-
     col1, col2, col3 = st.columns(3)
     with col1:
         agg_mode = st.selectbox(
