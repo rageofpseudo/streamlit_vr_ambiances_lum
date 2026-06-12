@@ -52,6 +52,73 @@ from umap_utils import (
     DISPLACEMENT_COLS,
 )
 
+data_dir = "./data/csv"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CHARGEMENT & CALCUL (avec cache Streamlit)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@st.cache_data(show_spinner="Chargement du sujet…")
+def cached_load(file_bytes: bytes, filename: str):
+    """
+    On passe les bytes bruts (hashables) plutôt que l'objet UploadedFile.
+    filename sert uniquement à construire l'id du sujet.
+    """
+    return load_subject(io.BytesIO(file_bytes))  # BytesIO = fichier en mémoire
+
+
+@st.cache_data(show_spinner="Calcul UMAP…")
+def cached_umap(df_json, mode, window_sec, use_physio, use_physio_filtered, use_displacement,
+                n_neighbors, min_dist):
+    # ← rien ne change ici
+    df = pd.read_json(df_json, convert_dates=False)
+    df["timestamp"] = df["timestamp"].astype(float)
+    df["t_rel"] = df["t_rel"].astype(float)
+    df_windowed = extract_window(df, mode=mode, window_sec=window_sec)
+    if df_windowed.empty:
+        return None
+    df_umap = compute_umap(
+        df_windowed,
+        use_physio=use_physio,
+        use_physio_filtered=use_physio_filtered,
+        use_displacement=use_displacement,
+        n_neighbors=n_neighbors,
+        min_dist=min_dist,
+    )
+    df_umap["event_label"] = df_umap.apply(get_event_label, axis=1)
+    return df_umap
+
+
+@st.cache_data(show_spinner="Chargement de tous les sujets...")
+def load_all_subjects(data_dir: str) -> dict:
+    # ← mode local, rien ne change
+    subjects_data = {}
+    for filepath in sorted(Path(data_dir).glob("*.csv")):
+        subject_name = filepath.stem
+        try:
+            df = load_subject(str(filepath))
+            subjects_data[subject_name] = df
+        except Exception as e:
+            #st.warning(f"{subject_name} : erreur au chargement ({e})")
+            print(f"{subject_name} : erreur au chargement ({e})")
+    return subjects_data
+
+
+def load_all_subjects_uploaded(uploaded_files) -> dict:
+    """
+    Version pour les fichiers uploadés.
+    Pas de @st.cache_data ici — le cache est géré dans cached_load,
+    au niveau de chaque fichier individuellement.
+    """
+    subjects_data = {}
+    for f in uploaded_files:
+        subject_name = Path(f.name).stem
+        try:
+            df = cached_load(f.read(), f.name)  # f.read() → bytes hashables
+            subjects_data[subject_name] = df
+        except Exception as e:
+            st.warning(f"{subject_name} : erreur au chargement ({e})")
+    return subjects_data
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -104,7 +171,7 @@ with st.sidebar:
     if uploaded_files:
         subjects = load_all_subjects_uploaded(uploaded_files)
     elif Path(DATA_DIR).exists():
-        subjects = load_all_subjects(DATA_DIR)
+        subjects = load_all_subjects("./data/csv")
     else:
         st.info("Charge les fichiers CSV dans la sidebar pour continuer.")
         st.stop()
@@ -121,9 +188,8 @@ with st.sidebar:
         "👤 Sujet",
         options=subject_names,
     )
-
+    
     df = subjects[selected_subject]  # ← le DataFrame, directement
-
     st.divider()
     # ... reste de ta sidebar (options UMAP, etc.)
 
@@ -217,70 +283,6 @@ with st.sidebar:
     run_umap = st.button("▶ Calculer UMAP", type="primary", use_container_width=True)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# CHARGEMENT & CALCUL (avec cache Streamlit)
-# ══════════════════════════════════════════════════════════════════════════════
-
-@st.cache_data(show_spinner="Chargement du sujet…")
-def cached_load(file_bytes: bytes, filename: str):
-    """
-    On passe les bytes bruts (hashables) plutôt que l'objet UploadedFile.
-    filename sert uniquement à construire l'id du sujet.
-    """
-    return load_subject(io.BytesIO(file_bytes))  # BytesIO = fichier en mémoire
-
-
-@st.cache_data(show_spinner="Calcul UMAP…")
-def cached_umap(df_json, mode, window_sec, use_physio, use_physio_filtered, use_displacement,
-                n_neighbors, min_dist):
-    # ← rien ne change ici
-    df = pd.read_json(df_json, convert_dates=False)
-    df["timestamp"] = df["timestamp"].astype(float)
-    df["t_rel"] = df["t_rel"].astype(float)
-    df_windowed = extract_window(df, mode=mode, window_sec=window_sec)
-    if df_windowed.empty:
-        return None
-    df_umap = compute_umap(
-        df_windowed,
-        use_physio=use_physio,
-        use_physio_filtered=use_physio_filtered,
-        use_displacement=use_displacement,
-        n_neighbors=n_neighbors,
-        min_dist=min_dist,
-    )
-    df_umap["event_label"] = df_umap.apply(get_event_label, axis=1)
-    return df_umap
-
-
-@st.cache_data(show_spinner="Chargement de tous les sujets...")
-def load_all_subjects(data_dir: str) -> dict:
-    # ← mode local, rien ne change
-    subjects_data = {}
-    for filepath in sorted(Path(data_dir).glob("*.csv")):
-        subject_name = filepath.stem
-        try:
-            df = load_subject(str(filepath))
-            subjects_data[subject_name] = df
-        except Exception as e:
-            st.warning(f"{subject_name} : erreur au chargement ({e})")
-    return subjects_data
-
-
-def load_all_subjects_uploaded(uploaded_files) -> dict:
-    """
-    Version pour les fichiers uploadés.
-    Pas de @st.cache_data ici — le cache est géré dans cached_load,
-    au niveau de chaque fichier individuellement.
-    """
-    subjects_data = {}
-    for f in uploaded_files:
-        subject_name = Path(f.name).stem
-        try:
-            df = cached_load(f.read(), f.name)  # f.read() → bytes hashables
-            subjects_data[subject_name] = df
-        except Exception as e:
-            st.warning(f"{subject_name} : erreur au chargement ({e})")
-    return subjects_data
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FONCTION CHECK NORMALITY QQ PLOT
@@ -334,7 +336,8 @@ def make_qqplot(df_agg: pd.DataFrame, col: str, label: str) -> go.Figure:
 st.title("VR · Ambiances Lumineuses")
 
 # Chargement du sujet sélectionné
-df_raw = cached_load(selected_file)
+#df_raw = cached_load(df,subject_names)
+df_raw = df
 
 # ── Résumé rapide du sujet ────────────────────────────────────────────────────
 col1, col2 = st.columns(2) #col3, col4 = st.columns(4)
@@ -932,7 +935,8 @@ with tab_participants:
 # TAB 5 — Statistiques
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_stats:
-    subjects_data = load_all_subjects(data_dir)
+    if uploaded_files:
+        subjects_data = subjects 
 
     col1, col2, col3 = st.columns(3)
     with col1:
