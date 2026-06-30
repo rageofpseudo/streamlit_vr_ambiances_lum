@@ -18,3 +18,5 @@ seaborn
 umap-learn>=0.5.6
 
 cvxeda
+
+xgboost>=2.0.0
